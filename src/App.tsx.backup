@@ -16,7 +16,6 @@ import {
 import {
   ATTRS,
   MERIT_CATEGORIES,
-  SELF_ATTESTED_XP_DAILY_CAP,
   XP_PER_LEVEL,
   createAuditTrailEntry,
   detectDuplicateQuest,
@@ -26,7 +25,6 @@ import {
   generateHeroSummary,
   levelFromXp,
   mintCard,
-  questXpForMerit,
   rankFor,
   useHero,
   type AttrKey,
@@ -36,26 +34,13 @@ import {
   type HeroCardSnapshot,
   type HeroDiaryEntry,
   type HeroFamiliar,
-  type HeroIdentityNotes,
   type QuestLog,
-  type XMatchChallenge,
 } from "../wxh/hero-store";
-import { ACCOUNT_CONNECTIONS, type ConnectedSocialAccount } from "../wxh/social-integrations";
-import { HeroCodex, HowItWorks } from "./HeroCodex";
-import entranceArtwork from "../photo/file_00000000bac0820c8fafd17eecf77595.png";
 
 type Screen = "intro" | "create" | "profile";
 type ProofMode = "photo" | "link";
 type AwakeningStep = "introduction" | "seeking" | "reveal";
 type GatewayStage = "idle" | "contact" | "gathering" | "burst" | "passage";
-const HERO_CREATION_STEPS = [
-  { title: "Welcome, Hero", kicker: "STEP 1 · YOUR BEGINNING", explanation: "World X Heroes is not asking you to invent a fictional avatar. You are the Hero. Your real skills, choices, projects, and growth form the story.", why: "This prototype stores the Hero identity you choose in this browser on this device. No account service or outside profile is read." },
-  { title: "Your Photo", kicker: "STEP 2 · OPTIONAL PORTRAIT", explanation: "A clear, well-lit head-and-shoulders photo works well as the visual foundation for your local Hero Card. A portrait is optional.", why: "The image is saved in this browser's local Hero record. It is not sent to an image-generation service or published by this prototype." },
-  { title: "Tell Us About You", kicker: "STEP 3 · YOUR STORY", explanation: "Share only what feels comfortable. A short introduction and a few interests help the local light-personality preview find relevant themes.", why: "These answers guide an on-device match and stay in your local Hero record. They are not pulled from Google or other accounts." },
-  { title: "Skills & Achievements", kicker: "STEP 4 · WHAT YOU BRING", explanation: "Skills and accomplishments can be art, music, inventions, care, sport, learning, community work, or any meaningful project. They are optional here.", why: "A profile claim alone does not earn XP. Quests have their own evidence and explicit completion rules after creation." },
-  { title: "Hero Visibility", kicker: "STEP 5 · YOUR IDENTITY LABEL", explanation: "Visible uses your Hero name in this local profile. Masked marks the Hero as masked while keeping your chosen Hero alias.", why: "This prototype has no public multi-user service or server-side audience controls. The choice changes local presentation only; it is not an account privacy guarantee." },
-  { title: "Review Your Hero", kicker: "STEP 6 · YOUR FINAL REVIEW", explanation: "Review your portrait, name, story, skills, optional details, and visibility before creating your local Hero Card.", why: "Nothing is submitted to a server. You can go back and edit these details before moving on to the Familiar-light preview." },
-] as const;
 type FamiliarForm = "dragon" | "phoenix" | "unicorn" | "fae" | "gryphon" | "kitsune" | "pegasus" | "water" | "selkie" | "gargoyle" | "sphinx" | "forest" | "wolf" | "winter" | "raven" | "owl" | "frog" | "moth";
 
 type FamiliarSpec = {
@@ -75,8 +60,6 @@ type FamiliarSpec = {
   evolutionPath: string;
 };
 type FamiliarMatch = { familiar: FamiliarSpec; resonance: FamiliarSignal[]; score: number };
-
-type XMatchDraft = { opponentName: string; challengeType: string; objective: string; rules: string; durationHours: number; pointsToWin: number };
 
 const FAMILIAR_CHOICES: FamiliarSpec[] = [
   { id: "celestial-dragon", species: "Celestial Dragon", realm: "celestial", form: "dragon", color: "#7295a6", temperament: "noble, observant, and quietly protective", name: "Auren", origin: "A keeper of the star-roads in The Between.", element: "Starlight", visualSignature: "Silver-blue scales, horned brow, long whiskers, and constellation runes.", evolutionPath: "Sky Warden → Astral Sovereign" },
@@ -118,17 +101,6 @@ const SIGNAL_RULES: { key: FamiliarSignal; label: string; pattern: RegExp }[] = 
   { key: "transformation", label: "Transformation", pattern: /change|grow|become|transform|reinvent|evolve/i },
   { key: "observation", label: "Observation", pattern: /notice|observe|watch|detail|pattern|pay attention/i },
   { key: "intuition", label: "Instinct", pattern: /instinct|intuition|sense that|gut feeling|read the room/i },
-];
-
-const AWAKENING_SIGNAL_PROMPTS: { key: FamiliarSignal; label: string }[] = [
-  { key: "creativity", label: "I love making things" },
-  { key: "protection", label: "I care for people" },
-  { key: "curiosity", label: "I follow questions" },
-  { key: "exploration", label: "I seek new places" },
-  { key: "wisdom", label: "I love to learn" },
-  { key: "courage", label: "I face hard things" },
-  { key: "resilience", label: "I keep going" },
-  { key: "leadership", label: "I bring people together" },
 ];
 
 const ARCHETYPE_SIGNALS: Record<string, FamiliarSignal[]> = {
@@ -401,17 +373,8 @@ function FamiliarPortrait({ familiar, stage = 1, mood = "calm", scale = "normal"
   }
 
   return (
-    <div className={`familiar-art familiar-art--light familiar-light--realm-${familiar.realm} familiar-art--stage-${stage} familiar-art--${mood} familiar-art--${scale} familiar-art--theme-${theme}`} style={{ "--familiar-color": familiar.color, "--familiar-accent-color": familiar.accentColor ?? familiar.color } as CSSProperties} aria-hidden="true">
-      <span className="familiar-light__wake" />
-      <span className="familiar-light__trail" />
-      <span className="familiar-light__orbit familiar-light__orbit--outer" />
-      <span className="familiar-light__orbit familiar-light__orbit--inner" />
-      <span className="familiar-light__core" />
-      <span className="familiar-light__particle familiar-light__particle--one" />
-      <span className="familiar-light__particle familiar-light__particle--two" />
-      <span className="familiar-light__particle familiar-light__particle--three" />
-      {stage > 1 && <span className="familiar-light__evolution" />}
-      <svg className="familiar-art__drawing familiar-art__drawing--dormant" viewBox="0 0 200 190" focusable="false">
+    <div className={`familiar-art familiar-art--${familiar.form}${familiar.secondaryForm ? ` familiar-art--secondary-${familiar.secondaryForm}` : ""} familiar-art--stage-${stage} familiar-art--${mood} familiar-art--${scale} familiar-art--theme-${theme}`} style={{ "--familiar-color": familiar.color, "--familiar-accent-color": familiar.accentColor ?? familiar.color } as CSSProperties} aria-hidden="true">
+      <svg className="familiar-art__drawing" viewBox="0 0 200 190" focusable="false">
         <defs>
           <linearGradient id={`${gradientId}-body`} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#fff8e6" /><stop offset="0.27" stopColor="var(--familiar-accent-color)" /><stop offset="0.72" stopColor="var(--familiar-color)" /><stop offset="1" stopColor="#393a49" /></linearGradient>
           <linearGradient id={`${gradientId}-highlight`} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#fff9e8" /><stop offset="0.42" stopColor="var(--familiar-accent-color)" /><stop offset="1" stopColor="var(--familiar-color)" /></linearGradient>
@@ -432,34 +395,36 @@ function FamiliarPortrait({ familiar, stage = 1, mood = "calm", scale = "normal"
 function UnformedFamiliar({ large = false }: { large?: boolean }) {
   return (
     <div className={`unformed-familiar${large ? " unformed-familiar--large" : ""}`} aria-hidden="true">
-      <span className="familiar-light__wake" />
-      <span className="familiar-light__trail" />
-      <span className="familiar-light__orbit familiar-light__orbit--outer" />
-      <span className="familiar-light__orbit familiar-light__orbit--inner" />
-      <span className="familiar-light__core" />
-      <span className="familiar-light__particle familiar-light__particle--one" />
-      <span className="familiar-light__particle familiar-light__particle--two" />
-      <span className="familiar-light__particle familiar-light__particle--three" />
+      <span className="unformed-familiar__halo" />
+      <span className="unformed-familiar__wing unformed-familiar__wing--left" />
+      <span className="unformed-familiar__wing unformed-familiar__wing--right" />
+      <span className="unformed-familiar__ear unformed-familiar__ear--left" />
+      <span className="unformed-familiar__ear unformed-familiar__ear--right" />
+      <span className="unformed-familiar__body" />
+      <span className="unformed-familiar__eyes"><i /><i /></span>
+      <span className="unformed-familiar__tail" />
+      <i className="unformed-familiar__fragment unformed-familiar__fragment--one" />
+      <i className="unformed-familiar__fragment unformed-familiar__fragment--two" />
+      <i className="unformed-familiar__fragment unformed-familiar__fragment--three" />
     </div>
   );
 }
 
 function RosePetalField({ mode = "ambient" }: { mode?: "ambient" | "awakening" | "milestone" }) {
-  const petals = Array.from({ length: 18 }, (_, index) => ({
+  const petals = Array.from({ length: 9 }, (_, index) => ({
     left: `${(index * 37 + 7) % 94}%`,
-    size: `${[6, 9, 13][index % 3] + (index % 3) * 2}px`,
-    drift: `${((index * 19) % 132) - 66}px`,
+    size: `${9 + (index % 4) * 3}px`,
+    drift: `${((index * 19) % 72) - 36}px`,
     spin: `${index % 2 === 0 ? 210 : -250}deg`,
-    duration: `${[34, 25, 18][index % 3] + (index % 4) * 2}s`,
+    duration: `${24 + (index % 5) * 4}s`,
     delay: `${-((index * 7) % 29)}s`,
-    depth: index % 3,
     tone: ["#a92338", "#c43a4d", "#85273a", "#d25360"][index % 4],
   }));
 
   return (
     <div className={`rose-petal-field rose-petal-field--${mode}`} aria-hidden="true">
       {petals.map((petal, index) => (
-        <svg key={index} viewBox="0 0 44 64" style={{ "--petal-left": petal.left, "--petal-size": petal.size, "--petal-drift": petal.drift, "--petal-spin": petal.spin, "--petal-duration": petal.duration, "--petal-delay": petal.delay, "--petal-tone": petal.tone, "--petal-depth": petal.depth } as CSSProperties}>
+        <svg key={index} viewBox="0 0 44 64" style={{ "--petal-left": petal.left, "--petal-size": petal.size, "--petal-drift": petal.drift, "--petal-spin": petal.spin, "--petal-duration": petal.duration, "--petal-delay": petal.delay, "--petal-tone": petal.tone } as CSSProperties}>
           <path className="rose-petal__shape" d="M22 61C17 49 3 41 4 26 5 13 15 4 23 3c11 10 18 20 15 32-2 10-9 18-16 26Z" />
           <path className="rose-petal__fold" d="M22 57C19 39 13 25 11 15m11 42c3-15 8-26 13-34" />
         </svg>
@@ -508,7 +473,6 @@ function HeroCard({ snapshot }: { snapshot?: HeroCardSnapshot }) {
     highlights: [],
   };
   const cardFamiliar = getFamiliarSpec(card.familiar.id, card.familiar.appearance);
-  const portrait = card.artwork?.src || card.avatar;
 
   return (
     <article className="hero-card">
@@ -516,13 +480,12 @@ function HeroCard({ snapshot }: { snapshot?: HeroCardSnapshot }) {
         <span>WORLD X HEROES</span>
         <span>LVL {card.level}</span>
       </div>
-      <div className={`hero-card__portrait${card.artwork ? " hero-card__portrait--generated" : ""}`}>
-        {portrait ? (
-          <img src={portrait} alt={card.artwork ? `${card.name}'s cinematic Hero artwork` : `${card.name}'s approved identity portrait`} />
+      <div className="hero-card__portrait">
+        {card.avatar ? (
+          <img src={card.avatar} alt={`${card.name}'s portrait`} />
         ) : (
           <div className="portrait-placeholder"><Sparkles size={31} strokeWidth={1.2} /></div>
         )}
-        {!card.artwork && <span className="hero-card__art-status">IDENTITY PORTRAIT · CINEMATIC ART GENERATION NOT CONNECTED</span>}
         <span className="hero-card__crest"><span>X</span></span>
       </div>
       <div className="hero-card__identity">
@@ -550,53 +513,9 @@ function HeroCard({ snapshot }: { snapshot?: HeroCardSnapshot }) {
   );
 }
 
-
-function ConnectedWorlds({ accounts, onDisconnect }: { accounts: ConnectedSocialAccount[]; onDisconnect: (id: string) => void }) {
-  const verifiedCount = accounts.filter((account) => account.status === "connected" && account.authorizationStatus === "server_verified" && ACCOUNT_CONNECTIONS.some((connection) => connection.id === account.provider && connection.state === "available")).length;
+function CelestialBackdrop({ cinematic = false, familiar, stage = 1, forming = false }: { cinematic?: boolean; familiar?: FamiliarSpec; stage?: number; forming?: boolean }) {
   return (
-    <section className="connected-worlds" id="connected-worlds" aria-labelledby="connected-worlds-title">
-      <div className="achievement-heading">
-        <div><span className="screen-kicker">CONNECT YOUR WORLD.</span><h2 id="connected-worlds-title">My Connections</h2></div>
-        <span className="pending-count">{verifiedCount} VERIFIED</span>
-      </div>
-      <p className="connected-worlds__privacy">Connect platforms you choose to your World X Heroes identity. Eligible activity may eventually support progression. No third-party passwords are requested or stored. This prototype has no OAuth server, developer credentials, approved scopes, or email delivery service, so it cannot connect or verify accounts. A future disconnect will stop new syncs; already-earned progression will remain unless published rules say otherwise.</p>
-      <div className="connected-worlds__list">
-        {ACCOUNT_CONNECTIONS.map((connection) => {
-          const localRecord = connection.id === "email" ? undefined : accounts.find((account) => account.provider === connection.id && account.status === "connected");
-          const serverVerified = connection.state === "available" && localRecord?.authorizationStatus === "server_verified";
-          const status = serverVerified ? "CONNECTED" : localRecord ? "CONNECTION ERROR" : "CONNECTION IN DEVELOPMENT";
-          return (
-            <article className="connected-world" key={connection.id}>
-              <div className="connected-world__identity"><span className="connected-world__sigil" aria-hidden="true">{connection.name.slice(0, 1)}</span><div><h3>{connection.name}</h3><p>{connection.authorization === "official_oauth" ? "Official authorization only · no platform password is collected." : "World X Heroes email verification only · not configured."}</p></div></div>
-              <div className="connected-world__details"><span className={`connected-world__status${serverVerified ? " connected-world__status--active" : ""}`}>{status}</span><small>Connected on: {serverVerified && localRecord?.connectedAt ? new Date(localRecord.connectedAt).toLocaleDateString() : "Not connected"}</small>{serverVerified && localRecord?.displayName && <small>{localRecord.displayName}</small>}{serverVerified && connection.id === "bigo-live" && localRecord?.providerAccountId && <small>BIGO ID · {localRecord.providerAccountId}</small>}{serverVerified && localRecord && <button type="button" className="connected-world__disconnect" onClick={() => onDisconnect(localRecord.id)}>DISCONNECT</button>}{localRecord && !serverVerified && <button type="button" className="connected-world__disconnect" onClick={() => onDisconnect(localRecord.id)}>REMOVE UNVERIFIED LOCAL RECORD</button>}</div>
-              <div className="connected-world__metrics"><span><b>DATA USED NOW</b> None</span><span><b>PLANNED DATA</b> {connection.plannedData.length ? connection.plannedData.join(", ") : "Not configured"}</span><span><b>PROGRESSION</b> {connection.plannedContribution}</span><span><b>LIMITATION</b> {connection.unavailableReason}</span>{serverVerified && localRecord && <span><b>AUTHORIZED SCOPES</b> {localRecord.authorizedScopes.join(", ") || "None reported"}</span>}</div>
-              {!serverVerified && <span className="connected-world__unavailable">{connection.state === "in_development" ? "CONNECT · IN DEVELOPMENT" : "NOT CONNECTED"}</span>}
-            </article>
-          );
-        })}
-      </div>
-      <div className="social-impact-summary"><div><span className="screen-kicker">SOCIAL / CREATOR IMPACT</span><strong>0 verified impact</strong></div><span>No external activity is imported. Social XP conversion is disabled.</span></div>
-      <a className="connected-worlds__manual" href="#achievement">SUBMIT ACCOMPLISHMENT FOR MANUAL REVIEW <ArrowRight size={14} /></a>
-    </section>
-  );
-}
-
-function XMatchArena({ heroName, challenges, onCreate, onTurn }: { heroName: string; challenges: XMatchChallenge[]; onCreate: (draft: XMatchDraft) => void; onTurn: (id: string, player: "challenger" | "opponent", proof: string) => void }) {
-  const [opponentName, setOpponentName] = useState("");
-  const [challengeType, setChallengeType] = useState("Creative");
-  const [objective, setObjective] = useState("");
-  const [rules, setRules] = useState("");
-  const [durationHours, setDurationHours] = useState(24);
-  const [pointsToWin, setPointsToWin] = useState(3);
-  const [roundProof, setRoundProof] = useState<Record<string, string>>({});
-  function createChallenge(event: FormEvent<HTMLFormElement>) { event.preventDefault(); onCreate({ opponentName: opponentName.trim(), challengeType, objective: objective.trim(), rules: rules.trim(), durationHours, pointsToWin }); setOpponentName(""); setObjective(""); setRules(""); }
-  function submitTurn(event: FormEvent<HTMLFormElement>, challengeId: string, player: "challenger" | "opponent") { event.preventDefault(); const key = challengeId + ":" + player; const proof = roundProof[key]?.trim() ?? ""; if (!proof) return; onTurn(challengeId, player, proof); setRoundProof((current) => ({ ...current, [key]: "" })); }
-  return <section className="xmatch-arena" aria-labelledby="xmatch-title"><div className="achievement-heading"><div><span className="screen-kicker">LOCAL PASS-AND-PLAY · ONLINE MATCHMAKING COMING SOON</span><h2 id="xmatch-title">X-Match Arena</h2></div><span className="pending-count">{challenges.filter((match) => match.status === "active").length} ACTIVE</span></div><p className="xmatch-disclaimer">Challenges and proof notes are stored on this device. Round submissions are not independently verified and do not award XP.</p><form className="xmatch-create" onSubmit={createChallenge}><label className="form-field"><span>OPPONENT NAME</span><input value={opponentName} onChange={(event) => setOpponentName(event.target.value)} maxLength={32} required placeholder="Name the other Hero" /></label><label className="form-field"><span>CHALLENGE TYPE</span><select value={challengeType} onChange={(event) => setChallengeType(event.target.value)}><option>Creative</option><option>Learning</option><option>Movement</option><option>Community</option><option>Custom</option></select></label><label className="form-field"><span>OBJECTIVE</span><input value={objective} onChange={(event) => setObjective(event.target.value)} maxLength={120} required placeholder="What will both Heroes try to do?" /></label><label className="form-field"><span>RULES</span><input value={rules} onChange={(event) => setRules(event.target.value)} maxLength={180} required placeholder="How will a round be counted?" /></label><label className="form-field"><span>ENDS IN</span><select value={durationHours} onChange={(event) => setDurationHours(Number(event.target.value))}><option value={24}>24 hours</option><option value={72}>3 days</option><option value={168}>7 days</option></select></label><label className="form-field"><span>POINTS TO WIN</span><input type="number" min={1} max={10} value={pointsToWin} onChange={(event) => setPointsToWin(Number(event.target.value))} required /></label><button className="primary-command" type="submit">CREATE X-MATCH <ArrowRight size={16} /></button></form>{challenges.length === 0 ? <p className="quiet-empty">Set the rules together, then record each round as you play.</p> : <div className="xmatch-list">{challenges.map((match) => <article className="xmatch-record" key={match.id}><div className="xmatch-record__heading"><div><span className="screen-kicker">{match.challengeType.toUpperCase()} MATCH</span><h3>{match.objective}</h3></div><span className="xmatch-record__status">{match.status === "active" ? "IN PROGRESS" : "WINNER · " + (match.winner === "challenger" ? heroName : match.opponentName)}</span></div><p>{match.rules}</p><div className="xmatch-score"><strong>{heroName || "Challenger"} <b>{match.challengerScore}</b></strong><span>TO {match.pointsToWin}</span><strong>{match.opponentName} <b>{match.opponentScore}</b></strong></div><p className="xmatch-deadline">Started {new Date(match.createdAt).toLocaleString()} · Ends {new Date(match.endsAt).toLocaleString()}</p>{match.status === "active" && <div className="xmatch-turns">{(["challenger", "opponent"] as const).map((player) => { const key = match.id + ":" + player; return <form className="xmatch-turn" key={player} onSubmit={(event) => submitTurn(event, match.id, player)}><label className="form-field"><span>{player === "challenger" ? heroName || "CHALLENGER" : match.opponentName} · ROUND SUBMISSION</span><input value={roundProof[key] ?? ""} onChange={(event) => setRoundProof((current) => ({ ...current, [key]: event.target.value }))} maxLength={240} required placeholder="Describe the round result or evidence" /></label><button className="secondary-command" type="submit">RECORD ROUND</button></form>; })}</div>}{match.turns.length > 0 && <ol className="xmatch-history">{match.turns.map((turn, index) => <li key={match.id + "-" + index}><span>{turn.player === "challenger" ? heroName || "Challenger" : match.opponentName}</span> {turn.proof} <time dateTime={new Date(turn.at).toISOString()}>{new Date(turn.at).toLocaleString()}</time></li>)}</ol>}</article>)}</div>}</section>;
-}
-
-function CelestialBackdrop({ cinematic = false, familiar, stage = 1, forming = false, environment }: { cinematic?: boolean; familiar?: FamiliarSpec; stage?: number; forming?: boolean; environment?: "gateway" | "awakening" | "domain" }) {
-  return (
-    <div className={`${cinematic ? "celestial-backdrop celestial-backdrop--cinematic" : "celestial-backdrop celestial-backdrop--ambient"}${environment ? ` celestial-backdrop--environment-${environment}` : ""}${familiar ? ` celestial-backdrop--realm-${familiar.realm}` : ""}${forming ? " celestial-backdrop--forming" : ""}`} aria-hidden="true">
+    <div className={`${cinematic ? "celestial-backdrop celestial-backdrop--cinematic" : "celestial-backdrop celestial-backdrop--ambient"}${familiar ? ` celestial-backdrop--realm-${familiar.realm}` : ""}${forming ? " celestial-backdrop--forming" : ""}`} aria-hidden="true">
       <div className="celestial-art celestial-art--figure" />
       <div className="celestial-art celestial-art--architecture" />
       <div className="celestial-lightwell" />
@@ -657,22 +576,17 @@ function CelestialBackdrop({ cinematic = false, familiar, stage = 1, forming = f
 }
 
 function App() {
-  const { hero, update, loaded, reset } = useHero();
+  const { hero, update, loaded } = useHero();
   const bondedFamiliar = getFamiliarSpec(hero.familiar.id, hero.familiar.appearance);
   const bondedFamiliarStage = familiarEvolutionStage(hero);
   const [screen, setScreen] = useState<Screen>("intro");
-  const [creationTutorialStep, setCreationTutorialStep] = useState(0);
-  const [creationHelpOpen, setCreationHelpOpen] = useState(false);
-  const [identityNotes, setIdentityNotes] = useState<HeroIdentityNotes>({ creations: "", interests: "", accomplishments: "", goals: "", distinction: "" });
-  const [heroBirthGuideOpen, setHeroBirthGuideOpen] = useState(false);
-  const [codexOpen, setCodexOpen] = useState(false);
   const [focus, setFocus] = useState<AttrKey>("heart");
   const [alias, setAlias] = useState("");
   const [heroTitle, setHeroTitle] = useState("");
   const [craft, setCraft] = useState("");
   const [bio, setBio] = useState("");
-  const [visualPreferences, setVisualPreferences] = useState("");
   const [skillsInput, setSkillsInput] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [masked, setMasked] = useState(true);
   const [avatar, setAvatar] = useState("");
   const [avatarName, setAvatarName] = useState("");
@@ -682,11 +596,9 @@ function App() {
   const [familiarMood, setFamiliarMood] = useState("calm");
   const [awakeningStep, setAwakeningStep] = useState<AwakeningStep>("introduction");
   const [heroIntroduction, setHeroIntroduction] = useState("");
-  const [selectedSignals, setSelectedSignals] = useState<FamiliarSignal[]>([]);
   const [discoverySignals, setDiscoverySignals] = useState<FamiliarSignal[]>([]);
   const [discoveryMatches, setDiscoveryMatches] = useState<FamiliarMatch[]>([]);
   const [recommendationIndex, setRecommendationIndex] = useState(0);
-  const [candidateOffset, setCandidateOffset] = useState(0);
   const [gatewayStage, setGatewayStage] = useState<GatewayStage>("idle");
   const [gatewayOrigin, setGatewayOrigin] = useState({ x: 50, y: 50 });
 
@@ -700,18 +612,13 @@ function App() {
   const [proofLink, setProofLink] = useState("");
   const [visibility, setVisibility] = useState<"sealed" | "public">("sealed");
   const [questMessage, setQuestMessage] = useState("");
-  const [selfAttestCompletion, setSelfAttestCompletion] = useState(false);
   const [selectedQuestId, setSelectedQuestId] = useState<string | null>(null);
   const [journalTitle, setJournalTitle] = useState("");
   const [journalContent, setJournalContent] = useState("");
   const [journalPrivacy, setJournalPrivacy] = useState<"private" | "profile" | "public">("private");
   const [goalInput, setGoalInput] = useState("");
-  const [companionOpen, setCompanionOpen] = useState(false);
+  const [companionOpen, setCompanionOpen] = useState(true);
   const [companionInput, setCompanionInput] = useState("");
-  const [companionNotice, setCompanionNotice] = useState("");
-  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
-  const [deletionReason, setDeletionReason] = useState("");
-  const [deletionDetails, setDeletionDetails] = useState("");
   const [companionMessages, setCompanionMessages] = useState<Array<{ id: string; role: "hero" | "companion"; text: string }>>([
     {
       id: "welcome",
@@ -743,19 +650,13 @@ function App() {
   function awaken(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const introduction = heroIntroduction.trim();
-    if (!alias.trim()) {
-      setCreationMessage("Choose a Hero name before continuing.");
-      setCreationTutorialStep(2);
-      return;
-    }
-    const matchContext = [introduction, skillsInput, craft, visualPreferences, ...Object.values(identityNotes)].filter(Boolean).join(" ");
-    const signals = [...new Set([...inferFamiliarSignals(matchContext), ...selectedSignals])];
+    const signals = inferFamiliarSignals(introduction);
     if (introduction.length < 18 || signals.length === 0) {
       setCreationMessage("Tell me a little about what you enjoy, hope to learn, or want to become. There is no right answer.");
       return;
     }
 
-    const matches = rankFamiliarMatches(signals, matchContext);
+    const matches = rankFamiliarMatches(signals, introduction);
     if (matches.length === 0) {
       setCreationMessage("I heard you, but I need another detail about your interests or hopes before a Familiar can take shape.");
       return;
@@ -764,7 +665,6 @@ function App() {
     setDiscoverySignals(signals);
     setDiscoveryMatches(matches);
     setRecommendationIndex(0);
-    setCandidateOffset(0);
     setFamiliarId(matches[0].familiar.id);
     setFamiliarName(matches[0].familiar.name);
     setCreationMessage("");
@@ -785,8 +685,6 @@ function App() {
       avatar,
       weapon: craft.trim(),
       bio: bio.trim(),
-      visualPreferences: visualPreferences.trim(),
-      identityNotes,
       ghost: masked,
       familiar: {
         id: chosen.id,
@@ -794,7 +692,7 @@ function App() {
         realm: chosen.realm,
         appearance: { primaryColor: chosen.color, accentColor: chosen.accentColor ?? chosen.color, marking: chosen.marking ?? "constellation tracery" },
       },
-      familiarMemory: { introduction: [heroIntroduction.trim(), ...Object.values(identityNotes)].filter(Boolean).join("\n").slice(-4000), signals: discoverySignals, recentReplies: [] },
+      familiarMemory: { introduction: heroIntroduction.trim().slice(-4000), signals: discoverySignals, recentReplies: [] },
       xp: 0,
       attrs: attributes,
       quests: [],
@@ -811,67 +709,16 @@ function App() {
         : `There you are. I followed the ${discoverySignals[0] ?? "quiet signal"} through The Between. I finally found you. I don't know exactly what I am yet. Maybe we'll figure that out together. You can call me ${familiarName.trim() || chosen.name}.`,
     }]);
     setFamiliarMood("curious");
-    setHeroBirthGuideOpen(true);
     setScreen("profile");
   }
 
   function exploreAnotherFamiliar() {
     if (discoveryMatches.length < 2) return;
-    const candidateCount = Math.min(4, discoveryMatches.length);
-    const nextIndex = (candidateOffset + Math.max(1, candidateCount - 1)) % discoveryMatches.length;
-    setCandidateOffset(nextIndex);
+    const nextIndex = (recommendationIndex + 1) % discoveryMatches.length;
     const next = discoveryMatches[nextIndex].familiar;
     setRecommendationIndex(nextIndex);
     setFamiliarId(next.id);
     setFamiliarName(next.name);
-  }
-
-  function disconnectSocialAccount(accountId: string) {
-    update({
-      ...hero,
-      connectedSocialAccounts: (hero.connectedSocialAccounts ?? []).map((account) => account.id === accountId
-        ? { ...account, status: "disconnected", disconnectedAt: Date.now() }
-        : account),
-    });
-  }
-
-  function createXMatch(draft: XMatchDraft) {
-    const now = Date.now();
-    const challenge: XMatchChallenge = {
-      id: crypto.randomUUID(),
-      opponentName: draft.opponentName,
-      challengeType: draft.challengeType,
-      objective: draft.objective,
-      rules: draft.rules,
-      createdAt: now,
-      endsAt: now + draft.durationHours * 60 * 60 * 1000,
-      pointsToWin: draft.pointsToWin,
-      challengerScore: 0,
-      opponentScore: 0,
-      turns: [],
-      status: "active",
-    };
-    update({ xMatchChallenges: [challenge, ...(hero.xMatchChallenges ?? [])] });
-  }
-
-  function recordXMatchTurn(challengeId: string, player: "challenger" | "opponent", proof: string) {
-    const now = Date.now();
-    update({
-      xMatchChallenges: (hero.xMatchChallenges ?? []).map((match) => {
-        if (match.id !== challengeId || match.status !== "active" || now > match.endsAt) return match;
-        const challengerScore = match.challengerScore + (player === "challenger" ? 1 : 0);
-        const opponentScore = match.opponentScore + (player === "opponent" ? 1 : 0);
-        const winner = challengerScore >= match.pointsToWin ? "challenger" : opponentScore >= match.pointsToWin ? "opponent" : undefined;
-        return {
-          ...match,
-          challengerScore,
-          opponentScore,
-          turns: [...match.turns, { player, proof, at: now }],
-          status: winner ? "complete" : "active",
-          winner,
-        };
-      }),
-    });
   }
 
   async function handleProofFile(event: ChangeEvent<HTMLInputElement>) {
@@ -919,26 +766,16 @@ function App() {
     }
 
     const merit = evaluateQuestMerit(title, description, questAttribute, questCategory.trim() || "General Contribution");
-    const today = new Date().toISOString().slice(0, 10);
-    const earnedToday = hero.quests
-      .filter((item) => item.verificationSource === "player_attestation" && new Date(item.at).toISOString().slice(0, 10) === today)
-      .reduce((total, item) => total + item.xp, 0);
-    const xpReward = selfAttestCompletion ? Math.min(questXpForMerit(merit), Math.max(0, SELF_ATTESTED_XP_DAILY_CAP - earnedToday)) : 0;
-    if (selfAttestCompletion && xpReward === 0) {
-      setQuestMessage(`Your ${SELF_ATTESTED_XP_DAILY_CAP} self-attested XP daily limit is reached. Save this quest for review or return tomorrow.`);
-      return;
-    }
     const quest: QuestLog = {
       id: crypto.randomUUID(),
       title,
       description,
       category: questCategory.trim() || "General Contribution",
-      xp: xpReward,
+      xp: 0,
       attr: questAttribute,
       at: Date.now(),
       proof,
-      verification: selfAttestCompletion ? "self_attested" : "submitted",
-      verificationSource: selfAttestCompletion ? "player_attestation" : undefined,
+      verification: "submitted",
       evidenceLevel: proof.kind === "link" ? 2 : 3,
       visibility,
       likes: 0,
@@ -956,30 +793,20 @@ function App() {
       id: crypto.randomUUID(),
       kind: "achievement",
       title: "Quest recorded",
-      content: selfAttestCompletion
-        ? `${title} was completed and self-attested with supporting evidence. ${xpReward} XP was added from the merit breakdown. This local claim has not been independently reviewed.`
-        : `${title} was documented and stored in your private Hero Journal. It remains pending review and awards no XP until completion is confirmed.`,
+      content: `${title} was documented and stored in your private Hero Journal. The AI is evaluating the evidence and will assign Merit only when the action is supported by proof.`,
       at: Date.now(),
       privacy: "private",
     };
 
-    const nextHero: Hero = {
+    const nextHero = {
       ...hero,
       quests: [quest, ...hero.quests],
-      xp: hero.xp + xpReward,
-      attrs: Object.fromEntries(ATTRS.map((attribute) => [attribute.key, hero.attrs[attribute.key] + (selfAttestCompletion ? merit.attributes[attribute.key] ?? 0 : 0)])) as Record<AttrKey, number>,
+      attrs: Object.fromEntries(ATTRS.map((attribute) => [attribute.key, hero.attrs[attribute.key] + (merit.attributes[attribute.key] ?? 0)])) as Record<AttrKey, number>,
       summary: generateHeroSummary({ ...hero, quests: [quest, ...hero.quests] }),
-      skills: selfAttestCompletion ? Array.from(new Set([...hero.skills, ...quest.title.split(/\s+/).filter((word) => word.length > 4).slice(0, 3)])) : hero.skills,
+      skills: Array.from(new Set([...hero.skills, ...quest.title.split(/\s+/).filter((word) => word.length > 4).slice(0, 3)])),
       diary: [questJournalEntry, ...hero.diary],
       auditTrail: [auditEntry, ...hero.auditTrail],
     };
-    const previousLevel = levelFromXp(hero.xp);
-    const nextLevel = levelFromXp(nextHero.xp);
-    if (selfAttestCompletion && nextLevel > previousLevel) {
-      nextHero.title = nextHero.title || rankFor(nextLevel).name;
-      nextHero.cards = [...hero.cards, mintCard(nextHero, nextLevel, [`${title}`, `+${xpReward} XP`])];
-      nextHero.badges = Array.from(new Set([...hero.badges, `level-${nextLevel}`]));
-    }
 
     update(nextHero);
     setFamiliarMood("investigating");
@@ -989,10 +816,7 @@ function App() {
     setProofData("");
     setProofName("");
     setProofLink("");
-    setSelfAttestCompletion(false);
-    setQuestMessage(selfAttestCompletion
-      ? `${xpReward} XP earned from your merit breakdown. This is self-attested, not independently verified.`
-      : "Quest saved for review. It has no XP until completion is confirmed.");
+    setQuestMessage("Evidence recorded. Merit and XP are assigned only when the claim is supported by adequate proof.");
   }
 
   function submitJournal(event: FormEvent<HTMLFormElement>) {
@@ -1083,16 +907,6 @@ function App() {
     const strongestAttribute = ATTRS.reduce((best, attr) => hero.attrs[attr.key] > hero.attrs[best.key] ? attr : best, ATTRS[0]);
     const latestQuest = hero.quests[0];
 
-    if (/(xp|level|rank|progress)/.test(text)) {
-      const attestedCount = hero.quests.filter((quest) => quest.verificationSource === "player_attestation").length;
-      return speak([`You have ${hero.xp} Hero XP and are level ${levelFromXp(hero.xp)}. ${attestedCount} quest${attestedCount === 1 ? " is" : "s are"} player-attested, not independently reviewed.`, `Your next level needs ${XP_PER_LEVEL - (hero.xp % XP_PER_LEVEL)} more XP. Completing a documented quest can move us closer; I will not invent a reward.`]);
-    }
-
-    if (/(x-match|match|challenge)/.test(text)) {
-      const activeMatch = (hero.xMatchChallenges ?? []).find((match) => match.status === "active");
-      return speak([activeMatch ? `Your X-Match with ${activeMatch.opponentName} is ${activeMatch.challengerScore} to ${activeMatch.opponentScore}. Let's review the rules before submitting a round.` : "Open the X-Match Arena to set a fair objective and rules with another player. Local round notes are not independently verified and earn no XP."]);
-    }
-
     if (/(what should i work on next|what should i do next|next goal|next quest)/.test(text)) {
       return speak([
         latestQuest
@@ -1176,37 +990,9 @@ function App() {
     setCompanionInput("");
   }
 
-  function saveLatestCompanionMoment() {
-    const latestReply = [...companionMessages].reverse().find((message) => message.role === "companion");
-    if (!latestReply) return;
-    update({ diary: [{ id: crypto.randomUUID(), kind: "reflection", title: "A moment with my Familiar", content: latestReply.text, at: Date.now(), privacy: "private" }, ...hero.diary] });
-    setCompanionNotice("Saved privately to your Chronicle.");
-  }
-
-  function draftLatestCompanionPost() {
-    const latestReply = [...companionMessages].reverse().find((message) => message.role === "companion");
-    if (!latestReply) return;
-    setJournalTitle("Familiar quote draft");
-    setJournalContent(latestReply.text);
-    setJournalPrivacy("private");
-    setCompanionNotice("Draft opened in your private Chronicle. Review it and choose sharing yourself; nothing is posted automatically.");
-    document.getElementById("chronicle")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-
-  function deleteLocalHeroData(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!deletionReason || (deletionReason === "Other" && !deletionDetails.trim())) return;
-    reset();
-    setDeleteAccountOpen(false);
-    setDeletionReason("");
-    setDeletionDetails("");
-    setScreen("intro");
-  }
-
   function enterWorld() {
     if (!loaded) return;
     setScreen(hero.created ? "profile" : "create");
-    if (!hero.created) setCreationTutorialStep(0);
     setGatewayStage("idle");
   }
 
@@ -1215,26 +1001,6 @@ function App() {
       x: Math.max(4, Math.min(96, (event.clientX / window.innerWidth) * 100)),
       y: Math.max(4, Math.min(96, (event.clientY / window.innerHeight) * 100)),
     });
-  }
-
-  function moveEntranceAtmosphere(event: ReactPointerEvent<HTMLElement>) {
-    if (event.pointerType === "touch") return;
-    const bounds = event.currentTarget.getBoundingClientRect();
-    const x = (event.clientX - bounds.left) / bounds.width - 0.5;
-    const y = (event.clientY - bounds.top) / bounds.height - 0.5;
-    event.currentTarget.style.setProperty("--parallax-x-far", `${x * 3}px`);
-    event.currentTarget.style.setProperty("--parallax-y-far", `${y * 2}px`);
-    event.currentTarget.style.setProperty("--parallax-x-mid", `${x * 7}px`);
-    event.currentTarget.style.setProperty("--parallax-y-mid", `${y * 5}px`);
-    event.currentTarget.style.setProperty("--parallax-x-near", `${x * 12}px`);
-    event.currentTarget.style.setProperty("--parallax-y-near", `${y * 9}px`);
-  }
-
-  function resetEntranceAtmosphere(event: ReactPointerEvent<HTMLElement>) {
-    for (const depth of ["far", "mid", "near"]) {
-      event.currentTarget.style.setProperty(`--parallax-x-${depth}`, "0px");
-      event.currentTarget.style.setProperty(`--parallax-y-${depth}`, "0px");
-    }
   }
 
   function activateGateway() {
@@ -1256,81 +1022,62 @@ function App() {
   if (screen === "intro") {
     return (
       <main className="intro-scene" id="home">
+        <CelestialBackdrop cinematic familiar={hero.created ? bondedFamiliar : undefined} stage={bondedFamiliarStage} />
         <RosePetalField mode={gatewayStage === "idle" ? "ambient" : "awakening"} />
         <header className="landing-header">
           <a className="landing-wordmark" href="#home" aria-label="World X Heroes home"><span>WORLD</span><i>X</i><span>HEROES</span></a>
           <nav className="landing-nav" aria-label="Main navigation">
-            <a href="#home">HOME</a><a href="#about">ABOUT</a><a href="#features">FEATURES</a><a href="#how-it-works">HOW IT WORKS</a><a href="#connected-worlds">MY CONNECTIONS</a><a href="#roadmap">ROADMAP</a><a href="#merch">MERCH</a><a href="#codex">CODEX</a><a href="#join">JOIN</a>
+            <a href="#home">HOME</a><a href="#about">ABOUT</a><a href="#features">FEATURES</a><a href="#roadmap">ROADMAP</a><a href="#join">JOIN</a>
           </nav>
           <p className="landing-manifesto">REAL PEOPLE.<br />REAL SKILLS.<br />REAL IMPACT.</p>
         </header>
 
-        <section className="intro-hero" aria-label="World X Heroes opening" onPointerMove={moveEntranceAtmosphere} onPointerLeave={resetEntranceAtmosphere}>
-          <div className="entrance-atmosphere" aria-hidden="true">
-            <span className="entrance-cloud entrance-cloud--distant" />
-            <span className="entrance-cloud entrance-cloud--middle" />
-            <span className="entrance-cloud entrance-cloud--low" />
-            <span className="entrance-mist entrance-mist--low" />
-            <span className="entrance-mist entrance-mist--middle" />
-            <span className="entrance-lightwell" />
-            <span className="entrance-shimmer" />
-            <div className="entrance-particles">
-              {Array.from({ length: 16 }, (_, index) => <i key={index} style={{ "--particle-left": `${(index * 37 + 11) % 96}%`, "--particle-top": `${(index * 53 + 9) % 88}%`, "--particle-size": `${1 + (index % 3)}px`, "--particle-duration": `${12 + (index % 7) * 3}s`, "--particle-delay": `${-(index % 11) * 1.7}s` } as CSSProperties} />)}
-            </div>
-          </div>
-          <RosePetalField mode={gatewayStage === "idle" ? "ambient" : "awakening"} />
-          <img className="entrance-artwork" src={entranceArtwork} alt="World X Heroes: a Hero and luminous dragon companion beneath the World X Heroes title" />
-          <h1 className="entrance-wordmark">
-            <span>WORLD</span>
+        <section className="intro-hero" aria-label="World X Heroes opening">
+          <div className="intro-content">
+            <h1 className="intro-title">
+              <span className="intro-title__word">World</span>
+              <span className="intro-title__x">X</span>
+              <span className="intro-title__word">Heroes</span>
+            </h1>
+            <p className="intro-motto">YOU ARE THE MAIN CHARACTER</p>
             <button
-              className={`portal-x${gatewayStage === "idle" ? "" : ` portal-x--${gatewayStage}`}`}
+              className={`enter-button${gatewayStage === "idle" ? "" : ` enter-button--${gatewayStage}`}`}
               type="button"
               onPointerDown={recordGatewayPointer}
               onClick={activateGateway}
               disabled={!loaded || gatewayStage !== "idle"}
-              aria-label="Enter World X Heroes through the X portal"
-              title={loaded ? "Enter World X Heroes" : "Preparing your world"}
+              style={{ "--gateway-origin-x": `${gatewayOrigin.x}%`, "--gateway-origin-y": `${gatewayOrigin.y}%` } as CSSProperties}
+              aria-label="Awaken your Hero and enter World X Heroes"
             >
-              <span className="portal-x__hint">ENTER</span>X
+              <span className="enter-button__frame">
+                <span className="enter-button__corner enter-button__corner--tl">✧</span>
+                <span className="enter-button__corner enter-button__corner--tr">✧</span>
+                <span className="enter-button__corner enter-button__corner--bl">✧</span>
+                <span className="enter-button__corner enter-button__corner--br">✧</span>
+                <span className="enter-button__crest">✦</span>
+                <span className="enter-button__label">{loaded ? "AWAKEN YOUR HERO" : "PREPARING YOUR WORLD"}</span>
+                <ArrowRight className="enter-button__arrow" size={17} strokeWidth={1.5} />
+                <span className="enter-button__inscription">ENTER THE WORLD</span>
+              </span>
             </button>
-            <span>HEROES</span>
-          </h1>
+          </div>
+          <div className="intro-seal" aria-hidden="true"><span>X</span></div>
         </section>
 
         <section className="landing-features" id="features" aria-label="World X Heroes features">
-          <div className="landing-features__group">
-            <div className="landing-features__heading"><span className="landing-eyebrow">PLAYABLE PROTOTYPE</span><h2>AVAILABLE NOW</h2></div>
-            <div className="landing-features__list">
-              <article><span className="landing-feature__seal"><UserRound /></span><h3>CREATE YOUR HERO</h3><p>Build a personal identity from your story, skills, and goals.</p></article>
-              <article><span className="landing-feature__seal"><Award /></span><h3>QUESTS &amp; PROGRESSION</h3><p>Record real work, evidence, local XP, levels, and card milestones.</p></article>
-              <article><span className="landing-feature__seal"><BookOpen /></span><h3>HERO CARD</h3><p>Your name, attributes, achievements, and rank stay in your local profile.</p></article>
-            </div>
-          </div>
-          <div className="landing-features__group landing-features__group--future">
-            <div className="landing-features__heading"><span className="landing-eyebrow">WORLD EXPANSION</span><h2>COMING SOON</h2></div>
-            <div className="landing-features__list">
-              <article><span className="landing-feature__seal"><Sparkles /></span><h3>AI FAMILIAR</h3><p>Your temporary living-light companion is a preview; full AI features are not connected.</p></article>
-              <article><span className="landing-feature__seal"><EyeOff /></span><h3>ONLINE X-MATCH</h3><p>Online challenges and independent review require a future service.</p></article>
-              <article><span className="landing-feature__seal"><ArrowRight /></span><h3>PLATFORM CONNECTIONS</h3><p>Official account integrations are not active; no social data is imported.</p></article>
-            </div>
-          </div>
+          <article><span className="landing-feature__seal"><Award /></span><h2>HERO<br />PROGRESSION</h2><p>1 — 9,999</p><p>Your journey.<br />Your level.</p></article>
+          <article><span className="landing-feature__seal"><Sparkles /></span><h2>EVOLVING<br />HERO CARDS</h2><p>Your story.</p><p>Visualized.</p></article>
+          <article><span className="landing-feature__seal"><BookOpen /></span><h2>PROOF &amp;<br />PROVENANCE</h2><p>Your creations.</p><p>Protected.</p></article>
+          <article><span className="landing-feature__seal"><EyeOff /></span><h2>GHOST HERO<br />MODE</h2><p>Your work.</p><p>Your privacy.</p></article>
+          <article><span className="landing-feature__seal"><UserRound /></span><h2>X-MATCH</h2><p>Real people.</p><p>Real collaboration.</p></article>
         </section>
-
-        <HowItWorks />
-        <ConnectedWorlds accounts={hero.connectedSocialAccounts ?? []} onDisconnect={disconnectSocialAccount} />
-        <HeroCodex xp={hero.xp} level={levelFromXp(hero.xp)} rank={rankFor(levelFromXp(hero.xp)).name} open={codexOpen} onOpenChange={setCodexOpen} />
-
-        <aside className="merch-announcement" id="merch" aria-label="Creator merchandise announcement">
-          <div><span className="landing-eyebrow">A NEW WAY TO SHARE YOUR WORLD</span><h2>YOUR CREATIONS. YOUR HERO. YOUR STORE.</h2><p>Creator merchandise tools are in development. Listings and sales are not open yet.</p></div>
-          <span className="merch-announcement__status">COMING SOON</span>
-        </aside>
 
         <section className="landing-story" id="about">
           <div className="landing-story__copy">
             <span className="landing-eyebrow">WORLD X HEROES</span>
             <h2>Your story matters</h2>
-            <p>World X Heroes turns your real-life skills, creativity, goals, and accomplishments into a personal Hero identity. Your photo becomes the foundation of your Hero Card; recorded quests and points shape progression over time.</p>
-            <p className="landing-story__script">Your life is the story.<br />Your actions shape the Hero.</p>
+            <p>You have skills. You have passions. You have a story. World X Heroes is where it all comes together—connecting you with people who see your value and your potential.</p>
+            <p className="landing-story__script">Not just a profile.<br />A hero's journey.</p>
           </div>
           <div className="landing-card-gallery" aria-label="Examples of evolving Hero identities">
             {["THE WAYFINDER", "THE CREATOR", "THE GUARDIAN", "THE DREAMER", "THE BUILDER"].map((title, index) => (
@@ -1349,12 +1096,12 @@ function App() {
           <span className="landing-rule" />
           <p className="landing-eyebrow">MORE THAN A PLATFORM</p>
           <h2>IT'S A UNIVERSE BUILT AROUND YOU.</h2>
-          <div className="landing-roadmap__steps"><span>NOW · HERO IDENTITY &amp; LOCAL QUESTS</span><i>／</i><span>NEXT · VERIFIED PROGRESSION</span><i>／</i><span>FUTURE · CONNECTED WORLDS</span></div>
+          <div className="landing-roadmap__steps"><span>CREATE YOUR HERO</span><i>／</i><span>MEET YOUR FAMILIAR</span><i>／</i><span>LIVE YOUR QUEST</span></div>
         </section>
 
         <footer className="landing-footer" id="join">
           <div className="landing-footer__invite"><span>BE PART OF SOMETHING GREATER</span><p>CREATE YOUR HERO <i>／</i> MEET YOUR FAMILIAR <i>／</i> SHAPE YOUR WORLD</p></div>
-          <a className="landing-join" href="#home">RETURN TO THE X <ArrowRight size={16} /></a>
+          <button className="landing-join" type="button" onClick={activateGateway} disabled={!loaded || gatewayStage !== "idle"}>BEGIN YOUR JOURNEY <ArrowRight size={16} /></button>
           <div className="landing-footer__brand"><span>WORLD <i>X</i> HEROES</span><small>HUMANITY <b>·</b> CREATIVITY <b>·</b> CONNECTION</small></div>
         </footer>
         {gatewayStage !== "idle" && (
@@ -1377,21 +1124,16 @@ function App() {
   }
 
   if (screen === "create") {
-    const guideStep = HERO_CREATION_STEPS[creationTutorialStep] ?? HERO_CREATION_STEPS[0];
     const currentMatch = discoveryMatches[recommendationIndex];
     const selectedFamiliar = currentMatch?.familiar ?? FAMILIAR_CHOICES.find((choice) => choice.id === familiarId) ?? FAMILIAR_CHOICES[0];
     const resonanceLabels = (currentMatch?.resonance ?? []).map((signal) => SIGNAL_RULES.find((rule) => rule.key === signal)?.label ?? signal);
-    const candidateMatches = Array.from({ length: Math.min(4, discoveryMatches.length) }, (_, offset) => ({
-      index: (candidateOffset + offset) % discoveryMatches.length,
-      match: discoveryMatches[(candidateOffset + offset) % discoveryMatches.length],
-    }));
 
     return (
       <main className="alpha-screen creation-screen">
-        <CelestialBackdrop cinematic={awakeningStep !== "introduction"} familiar={awakeningStep !== "introduction" ? selectedFamiliar : undefined} forming={awakeningStep === "seeking"} environment="awakening" />
+        <CelestialBackdrop cinematic={awakeningStep !== "introduction"} familiar={awakeningStep !== "introduction" ? selectedFamiliar : undefined} forming={awakeningStep === "seeking"} />
         <RosePetalField mode={awakeningStep === "introduction" ? "ambient" : "awakening"} />
         <header className="alpha-header">
-          <button className="icon-command" type="button" onClick={() => awakeningStep === "introduction" && creationTutorialStep > 0 ? setCreationTutorialStep((step) => step - 1) : setScreen("intro")} aria-label={awakeningStep === "introduction" && creationTutorialStep > 0 ? "Previous creation step" : "Back to opening"}>
+          <button className="icon-command" type="button" onClick={() => setScreen("intro")} aria-label="Back to opening">
             <ArrowLeft size={18} />
           </button>
           <span className="alpha-wordmark">WORLD <i>X</i> HEROES</span>
@@ -1399,26 +1141,47 @@ function App() {
         </header>
         <div className="creation-wrap">
           <div className="screen-heading">
-            <span className="screen-kicker">{awakeningStep === "introduction" ? guideStep.kicker : awakeningStep === "seeking" ? "THE BETWEEN IS ANSWERING" : "A BOND BEGINS"}</span>
-            <h1>{awakeningStep === "introduction" ? guideStep.title : awakeningStep === "seeking" ? "I think I remember something..." : "Your light has a name"}</h1>
-            <p>{awakeningStep === "introduction" ? guideStep.explanation : awakeningStep === "seeking" ? "A signal is gathering. Your light is taking on a subtle identity." : "This named light reflects the themes you shared. The full AI companion experience is coming soon."}</p>
-            {awakeningStep === "introduction" && <div className="creation-step-progress" aria-label={`Creation step ${creationTutorialStep + 1} of ${HERO_CREATION_STEPS.length}`}><span style={{ width: `${((creationTutorialStep + 1) / HERO_CREATION_STEPS.length) * 100}%` }} /></div>}
+            <span className="screen-kicker">{awakeningStep === "introduction" ? "THE BETWEEN" : awakeningStep === "seeking" ? "THE BETWEEN IS ANSWERING" : "A BOND BEGINS"}</span>
+            <h1>{awakeningStep === "introduction" ? "Before I take form..." : awakeningStep === "seeking" ? "I think I remember something..." : "Your Familiar has awakened"}</h1>
+            <p>{awakeningStep === "introduction" ? "A Familiar crossed the space between worlds to find a Hero. It found you, but it cannot know what it is until it knows who you are." : awakeningStep === "seeking" ? "A signal is gathering. The shape is not settled yet." : "This is a possibility that emerged from your story, not a verdict about who you are."}</p>
           </div>
           <form className="creation-form" onSubmit={awaken}>
             <div className="creation-main">
               {awakeningStep === "introduction" ? (
                 <>
-                  {creationTutorialStep === 0 && <section className="creation-welcome"><div className="familiar-invitation"><UnformedFamiliar /><div><span>WELCOME, HERO</span><p>“There you are. I was looking for you.”</p></div></div><blockquote>THE HUMAN IS THE CHARACTER.</blockquote><p>You are not inventing a fictional avatar. Your skills, experiences, creativity, and choices are the beginning of your Hero identity.</p><p className="creation-local-note">This prototype saves your Hero on this device. It does not connect to a public account or read outside profiles.</p></section>}
-
-                  {creationTutorialStep === 1 && <section className="creation-step-surface"><h2>Your photo can be a visual starting point.</h2><p>A clear, well-lit portrait works best. A photo is optional, and no AI image generation is currently connected.</p><p>The selected image is stored in this browser's local Hero record. It is not uploaded to a server by this prototype.</p></section>}
-
-                  {creationTutorialStep === 2 && <section className="creation-step-fields"><label className="form-field"><span>HERO NAME <b>*</b></span><input value={alias} onChange={(event) => setAlias(event.target.value)} placeholder="What should your Hero be called?" maxLength={32} required /></label><label className="form-field"><span>TELL US ABOUT YOU <b>*</b></span><textarea className="awakening-introduction" value={heroIntroduction} onChange={(event) => setHeroIntroduction(event.target.value)} placeholder="What do you enjoy, hope to learn, or want to become?" rows={5} maxLength={900} required /></label><fieldset className="awakening-signals"><legend>WHICH THREADS FEEL LIKE YOURS? <small>Optional · choose any that fit</small></legend><div className="awakening-signals__choices">{AWAKENING_SIGNAL_PROMPTS.map((prompt) => { const selected = selectedSignals.includes(prompt.key); return <button key={prompt.key} type="button" className={selected ? "awakening-signal awakening-signal--selected" : "awakening-signal"} aria-pressed={selected} onClick={() => setSelectedSignals((current) => selected ? current.filter((signal) => signal !== prompt.key) : [...current, prompt.key])}><span aria-hidden="true">{selected ? "✦" : "◇"}</span>{prompt.label}</button>; })}</div></fieldset><p className="awakening-prompt">This introduction and the threads you choose guide an on-device light-personality preview. No Google or social profile data is read.</p></section>}
-
-                  {creationTutorialStep === 3 && <section className="creation-step-fields"><div className="field-row"><label className="form-field"><span>HERO TITLE <small>OPTIONAL</small></span><input value={heroTitle} onChange={(event) => setHeroTitle(event.target.value)} placeholder="An epithet for your Hero" maxLength={48} /></label><label className="form-field"><span>SKILLS <small>OPTIONAL · SEPARATE WITH COMMAS</small></span><input value={skillsInput} onChange={(event) => setSkillsInput(event.target.value)} placeholder="Teaching, woodworking, music..." maxLength={240} /></label></div><label className="form-field"><span>CRAFT OR TOOL <small>OPTIONAL</small></span><input value={craft} onChange={(event) => setCraft(event.target.value)} placeholder="A skill or tool you use" maxLength={48} /></label><div className="identity-note-list"><details><summary>WHAT DO YOU CREATE? <small>OPTIONAL</small></summary><textarea value={identityNotes.creations} onChange={(event) => setIdentityNotes((notes) => ({ ...notes, creations: event.target.value }))} rows={2} maxLength={300} placeholder="Art, music, inventions, projects..." /></details><details><summary>WHAT DO YOU LOVE? <small>OPTIONAL</small></summary><textarea value={identityNotes.interests} onChange={(event) => setIdentityNotes((notes) => ({ ...notes, interests: event.target.value }))} rows={2} maxLength={300} placeholder="Interests, hobbies, and subjects you enjoy..." /></details><details><summary>WHAT HAVE YOU ACCOMPLISHED? <small>OPTIONAL</small></summary><textarea value={identityNotes.accomplishments} onChange={(event) => setIdentityNotes((notes) => ({ ...notes, accomplishments: event.target.value }))} rows={2} maxLength={300} placeholder="Work, learning, care, community, personal projects..." /></details><details><summary>WHAT ARE YOU WORKING TOWARD? <small>OPTIONAL</small></summary><textarea value={identityNotes.goals} onChange={(event) => setIdentityNotes((notes) => ({ ...notes, goals: event.target.value }))} rows={2} maxLength={300} placeholder="A skill, project, or goal you want to pursue..." /></details><details><summary>WHAT MAKES YOU DIFFERENT? <small>OPTIONAL</small></summary><textarea value={identityNotes.distinction} onChange={(event) => setIdentityNotes((notes) => ({ ...notes, distinction: event.target.value }))} rows={2} maxLength={300} placeholder="A perspective or quality you value in yourself..." /></details></div><label className="form-field"><span>VISUAL DIRECTION <small>OPTIONAL · FUTURE APPROVED ART ONLY</small></span><input value={visualPreferences} onChange={(event) => setVisualPreferences(event.target.value)} placeholder="Worlds, materials, colors, or genres" maxLength={180} /></label><label className="form-field"><span>PROFILE STORY <small>OPTIONAL · SHOWN IN YOUR LOCAL PROFILE</small></span><textarea value={bio} onChange={(event) => setBio(event.target.value)} placeholder="A short note for your Hero profile" rows={2} maxLength={280} /></label><p className="creation-local-note">Fame is not required. These details shape your identity; accomplishments do not automatically receive XP. Quests may require evidence.</p></section>}
-
-                  {creationTutorialStep === 4 && <section className="creation-step-surface"><h2>Choose how your Hero is labeled.</h2><p>Visible or Masked changes the label shown in this local profile. The prototype has no public multi-user service, so this is not a server-side audience or privacy control.</p><fieldset className="attribute-choice"><legend>CHOOSE A STARTING STRENGTH <small>One attribute begins at 3</small></legend><div className="attribute-options">{ATTRS.map((attribute) => <button className={focus === attribute.key ? "attribute-option attribute-option--active" : "attribute-option"} type="button" key={attribute.key} aria-pressed={focus === attribute.key} onClick={() => setFocus(attribute.key)}><span>{attribute.label}</span><small>{attribute.blurb}</small><b>{focus === attribute.key ? "03" : "01"}</b></button>)}</div></fieldset></section>}
-
-                  {creationTutorialStep === 5 && <section className="creation-review"><span className="screen-kicker">REVIEW BEFORE CREATION</span><div className="creation-review__identity">{avatar ? <img src={avatar} alt="Chosen Hero portrait" /> : <span>{initials(alias)}</span>}<div><h2>{alias || "Your Hero"}</h2><p>{heroTitle || "Newly arrived Hero"}</p></div></div><dl><div><dt>STORY</dt><dd>{heroIntroduction || "Not added"}</dd></div><div><dt>SKILLS</dt><dd>{[craft, ...skillsInput.split(",").map((skill) => skill.trim()).filter(Boolean)].filter(Boolean).join(", ") || "Not added"}</dd></div><div><dt>ACCOMPLISHMENTS</dt><dd>{identityNotes.accomplishments || "Not added"}</dd></div><div><dt>GOALS</dt><dd>{identityNotes.goals || "Not added"}</dd></div><div><dt>VISIBILITY</dt><dd>{masked ? "Masked Hero label" : "Visible Hero label"} · local profile only</dd></div></dl><p className="creation-local-note">Your photo, answers, and selected settings are saved locally in this browser.</p></section>}
+                  <div className="familiar-invitation"><UnformedFamiliar /><div><span>A SIGNAL FROM THE BETWEEN</span><p>“There you are. I was looking for you.”</p></div></div>
+                  <label className="form-field">
+                    <span>WHAT SHOULD I KNOW ABOUT YOU? <b>*</b></span>
+                    <textarea className="awakening-introduction" value={heroIntroduction} onChange={(event) => setHeroIntroduction(event.target.value)} placeholder="I love making things, I'm curious about the natural world, and I hope to build something that helps people..." rows={5} maxLength={900} required />
+                  </label>
+                  <p className="awakening-prompt">You might tell me what you love creating, what you're curious about, what you hope to learn, or the kind of person you want to become. No test. Share only what feels right.</p>
+                  <label className="form-field">
+                    <span>HERO NAME <b>*</b></span>
+                    <input value={alias} onChange={(event) => setAlias(event.target.value)} placeholder="What should your Hero be called?" maxLength={32} required />
+                  </label>
+                  {!showAdvanced ? (
+                    <button type="button" className="secondary-command" onClick={() => setShowAdvanced(true)}>ADD MORE DETAILS</button>
+                  ) : (
+                    <>
+                      <div className="field-row">
+                        <label className="form-field"><span>HERO TITLE</span><input value={heroTitle} onChange={(event) => setHeroTitle(event.target.value)} placeholder="Optional title or epithet" maxLength={48} /></label>
+                        <label className="form-field"><span>CRAFT</span><input value={craft} onChange={(event) => setCraft(event.target.value)} placeholder="Optional skill or tool" maxLength={48} /></label>
+                      </div>
+                      <label className="form-field"><span>SKILLS <small>OPTIONAL, SEPARATE WITH COMMAS</small></span><input value={skillsInput} onChange={(event) => setSkillsInput(event.target.value)} placeholder="Teaching, woodworking, sound design..." maxLength={240} /></label>
+                      <label className="form-field"><span>PROFILE STORY <small>OPTIONAL, SEPARATE FROM PRIVATE INTRODUCTION</small></span><textarea value={bio} onChange={(event) => setBio(event.target.value)} placeholder="A short note you'd like on your Hero profile." rows={3} maxLength={280} /></label>
+                      <button type="button" className="secondary-command" onClick={() => setShowAdvanced(false)}>KEEP IT SIMPLE</button>
+                    </>
+                  )}
+                  <fieldset className="attribute-choice">
+                    <legend>CHOOSE A STARTING STRENGTH <small>Pick one to guide your first steps</small></legend>
+                    <div className="attribute-options">
+                      {ATTRS.map((attribute) => (
+                        <button className={focus === attribute.key ? "attribute-option attribute-option--active" : "attribute-option"} type="button" key={attribute.key} aria-pressed={focus === attribute.key} onClick={() => setFocus(attribute.key)}>
+                          <span>{attribute.label}</span><small>{attribute.blurb}</small><b>{focus === attribute.key ? "03" : "01"}</b>
+                        </button>
+                      ))}
+                    </div>
+                  </fieldset>
                 </>
               ) : awakeningStep === "seeking" ? (
                 <section className="familiar-seeking" aria-live="polite">
@@ -1430,27 +1193,12 @@ function App() {
                 </section>
               ) : (
                 <section className="familiar-reveal" aria-live="polite">
-                  <div className="familiar-candidates" aria-label="Personalized Familiar candidates">
-                    <div className="familiar-candidates__heading"><span className="screen-kicker">LIGHT PERSONALITIES FROM YOUR STORY</span><button type="button" className="secondary-command" onClick={exploreAnotherFamiliar}>EXPLORE RELATED LIGHTS</button></div>
-                    <div className="familiar-candidates__list">
-                      {candidateMatches.map(({ index, match }) => {
-                        const labels = match.resonance.map((signal) => SIGNAL_RULES.find((rule) => rule.key === signal)?.label ?? signal);
-                        const chosen = index === recommendationIndex;
-                        return <button type="button" key={`${match.familiar.id}-${index}`} className={`familiar-candidate${chosen ? " familiar-candidate--selected" : ""}`} aria-pressed={chosen} onClick={() => { setRecommendationIndex(index); setFamiliarId(match.familiar.id); setFamiliarName(match.familiar.name); }}>
-                          <FamiliarPortrait familiar={match.familiar} scale="card" mood="curious" />
-                          <span className="familiar-candidate__name">{match.familiar.name} · Living Light</span>
-                          <span className="familiar-candidate__reason">Connected to {labels.slice(0, 3).join(", ") || "your shared story"}</span>
-                        </button>;
-                      })}
-                    </div>
-                    <p className="familiar-candidates__note">These on-device matches are based only on what you chose to share. Regenerating changes the candidate set, not your underlying answers.</p>
-                  </div>
                   <div className="awakening-clues">{resonanceLabels.map((label) => <span key={label}>{label}</span>)}</div>
                   <FamiliarPortrait key={selectedFamiliar.id} familiar={selectedFamiliar} mood="curious" />
-                    <span className="screen-kicker">LIVING-LIGHT PREVIEW · FULL AI FAMILIAR COMING SOON</span>
-                  <h2>{familiarName || selectedFamiliar.name} · Living Light</h2>
+                  <span className="screen-kicker">FAMILIAR AWAKENED</span>
+                  <h2>{selectedFamiliar.species}</h2>
                   <p className="familiar-reveal__temperament">{selectedFamiliar.temperament}</p>
-                  <p className="familiar-reveal__reason">I heard you mention {resonanceLabels.map((label) => label.toLowerCase()).join(", ")}. This light preview reflects what you chose to share. Its full AI companion features are coming soon.</p>
+                  <p className="familiar-reveal__reason">I heard you mention {resonanceLabels.map((label) => label.toLowerCase()).join(", ")}. Based on what you chose to share, this Familiar may resonate with your story. It is a possibility to explore, not a judgment about who you are.</p>
                   <blockquote className="familiar-first-words">{selectedFamiliar.id.startsWith("hybrid:") ? "You're difficult to classify. So am I." : "There you are. I wondered what you would be like."}<br />“I don't think I know what I am yet. Maybe we'll figure that out together.”</blockquote>
                   <label className="form-field"><span>GIVE YOUR FAMILIAR A NAME</span><input value={familiarName} onChange={(event) => setFamiliarName(event.target.value)} placeholder="Name your companion" maxLength={24} /></label>
                   <p className="familiar-memory-note"><LockKeyhole size={13} /> Your introduction stays private and is not added to your profile or Hero Card.</p>
@@ -1459,14 +1207,34 @@ function App() {
             </div>
             <aside className="creation-aside">
               {awakeningStep === "introduction" ? (
-                <div className="creation-guide-aside">
-                  {creationTutorialStep === 0 && <div className="creation-guide-aside__welcome"><span className="screen-kicker">YOUR JOURNEY STARTS HERE</span><h2>Begin with who you are.</h2><p>Your real-world identity is the foundation. Your Hero grows through the choices and actions you record.</p></div>}
-                  {creationTutorialStep === 1 && <div className="avatar-picker"><div className="avatar-preview">{avatar ? <img src={avatar} alt="Selected Hero portrait" /> : <UserRound size={43} strokeWidth={1.1} />}<span className="avatar-spark"><Sparkles size={15} /></span></div><label className="upload-command"><Upload size={15} /> ADD PORTRAIT<input type="file" accept="image/*" onChange={handleAvatar} /></label><span className="field-help">Optional · JPG or PNG · up to 750 KB · stored on this device</span>{avatarName && <span className="file-name">{avatarName}</span>}</div>}
-                  {creationTutorialStep === 4 && <fieldset className="privacy-choice"><legend>IDENTITY VISIBILITY</legend><div className="privacy-options"><button className={!masked ? "privacy-option privacy-option--active" : "privacy-option"} type="button" aria-pressed={!masked} onClick={() => setMasked(false)}><Eye size={16} /> VISIBLE</button><button className={masked ? "privacy-option privacy-option--active" : "privacy-option"} type="button" aria-pressed={masked} onClick={() => setMasked(true)}><EyeOff size={16} /> MASKED</button></div><p>Visible or Masked changes the label in your local profile. There is no public multi-user service or server-side audience control in this prototype.</p></fieldset>}
-                  <div className="creation-context-help"><button type="button" className="secondary-command" aria-expanded={creationHelpOpen} onClick={() => setCreationHelpOpen((open) => !open)}>{creationHelpOpen ? "CLOSE EXPLANATION" : "WHY DO YOU NEED THIS?"}</button>{creationHelpOpen && <p>{guideStep.why}</p>}<p><strong>Next:</strong> {creationTutorialStep < 5 ? HERO_CREATION_STEPS[creationTutorialStep + 1].title : "Review your choices, then continue to the Familiar-light preview."}</p></div>
-                  <div className="creation-tutorial-nav">{creationTutorialStep > 0 && <button type="button" className="secondary-command" onClick={() => { setCreationTutorialStep((step) => step - 1); setCreationHelpOpen(false); }}>BACK</button>}{creationTutorialStep < 5 ? <button type="button" className="primary-command" onClick={() => { if (creationTutorialStep === 2 && (!alias.trim() || heroIntroduction.trim().length < 18)) { setCreationMessage("Add a Hero name and a short introduction before continuing."); return; } setCreationMessage(""); setCreationHelpOpen(false); setCreationTutorialStep((step) => step + 1); }}>{creationTutorialStep === 0 ? "BEGIN YOUR HERO" : "CONTINUE"}<ArrowRight size={16} /></button> : <button type="submit" className="primary-command">CONTINUE TO FAMILIAR PREVIEW <ArrowRight size={16} /></button>}</div>
-                  <p className="form-message" role="status">{creationMessage}</p>
+                <>
+              <div className="avatar-picker">
+                <div className="avatar-preview">
+                  {avatar ? <img src={avatar} alt="Selected Hero portrait" /> : <UserRound size={43} strokeWidth={1.1} />}
+                  <span className="avatar-spark"><Sparkles size={15} /></span>
                 </div>
+                <label className="upload-command">
+                  <Upload size={15} /> ADD PORTRAIT
+                  <input type="file" accept="image/*" onChange={handleAvatar} />
+                </label>
+                <span className="field-help">Optional image, up to 750 KB</span>
+                {avatarName && <span className="file-name">{avatarName}</span>}
+              </div>
+              <fieldset className="privacy-choice">
+                <legend>IDENTITY VISIBILITY</legend>
+                <div className="privacy-options">
+                  <button className={!masked ? "privacy-option privacy-option--active" : "privacy-option"} type="button" aria-pressed={!masked} onClick={() => setMasked(false)}>
+                    <Eye size={16} /> VISIBLE
+                  </button>
+                  <button className={masked ? "privacy-option privacy-option--active" : "privacy-option"} type="button" aria-pressed={masked} onClick={() => setMasked(true)}>
+                    <EyeOff size={16} /> MASKED
+                  </button>
+                </div>
+                <p>Your Hero can use an alias. Private identity details are not requested.</p>
+              </fieldset>
+              <button className="primary-command" type="submit">LET THE FAMILIAR LISTEN <ArrowRight size={17} /></button>
+              <p className="form-message" role="status">{creationMessage}</p>
+                </>
               ) : awakeningStep === "seeking" ? (
                 <div className="familiar-choice-actions familiar-choice-actions--seeking" aria-live="polite">
                   <UnformedFamiliar />
@@ -1475,7 +1243,7 @@ function App() {
                 </div>
               ) : (
                 <div className="familiar-choice-actions">
-                  <button className="primary-command" type="button" onClick={acceptFamiliar}>CREATE MY HERO <ArrowRight size={17} /></button>
+                  <button className="primary-command" type="button" onClick={acceptFamiliar}>ACCEPT FAMILIAR <ArrowRight size={17} /></button>
                   <button className="secondary-command" type="button" onClick={exploreAnotherFamiliar}>EXPLORE ANOTHER</button>
                   <button className="secondary-command" type="button" onClick={() => setAwakeningStep("introduction")}>ADD TO MY STORY</button>
                   <p className="form-message" role="status">You choose who walks beside you. Nothing is bound until you accept.</p>
@@ -1500,7 +1268,7 @@ function App() {
 
   return (
     <main className="alpha-screen profile-screen">
-      <CelestialBackdrop cinematic familiar={profileFamiliar} stage={familiarStage} environment="domain" />
+      <CelestialBackdrop familiar={profileFamiliar} stage={familiarStage} />
       <RosePetalField mode={verifiedQuestCount > 0 ? "milestone" : "ambient"} />
       <header className="alpha-header">
         <button className="icon-command" type="button" onClick={() => setScreen("intro")} aria-label="Back to opening">
@@ -1509,8 +1277,6 @@ function App() {
         <span className="alpha-wordmark">WORLD <i>X</i> HEROES</span>
         <span className="profile-private-label">{hero.ghost ? <><EyeOff size={13} /> MASKED HERO</> : <><Eye size={13} /> VISIBLE HERO</>}</span>
       </header>
-
-      {heroBirthGuideOpen && <section className="hero-birth-guide" aria-label="Your Hero was created"><div><span className="screen-kicker">YOUR HERO IS BORN</span><h2>Creation is only the beginning.</h2><p>YOUR HERO → YOUR CARD → YOUR POINTS → YOUR XP → YOUR LEVEL → YOUR RANK → YOUR ACHIEVEMENTS → YOUR CHALLENGES → YOUR LEGEND</p></div><div className="hero-birth-guide__actions"><button type="button" className="primary-command" onClick={() => document.getElementById("how-it-works")?.scrollIntoView({ behavior: "smooth" })}>LEARN HOW IT WORKS <ArrowRight size={15} /></button><button type="button" className="secondary-command" onClick={() => setCodexOpen(true)}>OPEN THE HERO'S CODEX <BookOpen size={15} /></button><button type="button" className="icon-command" onClick={() => setHeroBirthGuideOpen(false)} aria-label="Dismiss Hero creation guide">×</button></div></section>}
 
       <div className="profile-wrap">
         <button type="button" className="companion-toggle" onClick={() => setCompanionOpen((open) => !open)} aria-label="Toggle Hero Companion">
@@ -1525,7 +1291,7 @@ function App() {
               <div>
                 <span className="screen-kicker">YOUR {profileFamiliar.realm.toUpperCase()} FAMILIAR</span>
                 <h3>{hero.familiar.name || "Wisp"}</h3>
-                <p>Living Light · {profileFamiliar.temperament}</p>
+                <p>{profileFamiliar.species} · {profileFamiliar.temperament}</p>
               </div>
               <button type="button" className="icon-command" onClick={() => setCompanionOpen(false)} aria-label="Close companion">×</button>
             </div>
@@ -1535,11 +1301,6 @@ function App() {
                   {message.text}
                 </div>
               ))}
-            </div>
-            <div className="companion-actions">
-              <button type="button" className="secondary-command" onClick={saveLatestCompanionMoment}>SAVE THIS · PRIVATE</button>
-              <button type="button" className="secondary-command" onClick={draftLatestCompanionPost}>DRAFT A POST</button>
-              <p role="status">{companionNotice}</p>
             </div>
             <form className="companion-form" onSubmit={handleCompanionSubmit}>
               <textarea value={companionInput} onChange={(event) => setCompanionInput(event.target.value)} rows={3} placeholder="Tell me what happened, what you're learning, or what you want to build..." maxLength={500} />
@@ -1568,7 +1329,7 @@ function App() {
               <Award size={26} strokeWidth={1.2} />
             </div>
             <div className="progress-track"><span style={{ width: `${progressPercent}%` }} /></div>
-            <div className="progress-foot"><span>{hero.xp} HERO XP</span><span>{XP_PER_LEVEL - earnedInLevel} XP TO NEXT LEVEL</span></div>
+            <div className="progress-foot"><span>{hero.xp} VERIFIED XP</span><span>{XP_PER_LEVEL - earnedInLevel} XP TO NEXT LEVEL</span></div>
             <p className="verified-count"><ShieldCheck size={14} /> {verifiedQuestCount} verified {verifiedQuestCount === 1 ? "achievement" : "achievements"}</p>
           </div>
         </section>
@@ -1614,25 +1375,6 @@ function App() {
             <p className="card-note">{generateCardArchetype(hero)} · {hero.name || "Unclaimed Hero"}</p>
           </section>
         </div>
-
-        <section className="familiar-sanctuary" aria-labelledby="familiar-sanctuary-title">
-          <div className="familiar-sanctuary__portrait"><FamiliarPortrait familiar={profileFamiliar} stage={familiarStage} mood={familiarMood} scale="backdrop" theme={latestCard.familiarTheme} /></div>
-          <div className="familiar-sanctuary__story">
-            <span className="screen-kicker">FAMILIAR PREVIEW · FULL AI COMPANION COMING SOON</span>
-            <h2 id="familiar-sanctuary-title">{hero.familiar.name || profileFamiliar.name}</h2>
-            <p>Living Light · {profileFamiliar.element}</p>
-            <p className="familiar-sanctuary__temperament">{profileFamiliar.temperament}</p>
-            <span className="familiar-sanctuary__evolution">LIGHT STAGE {familiarStage} · progression preview</span>
-            <button className="sanctuary-command" type="button" onClick={() => setCompanionOpen((open) => !open)}>
-              {companionOpen ? "CLOSE COMPANION CONVERSATION" : "OPEN COMPANION CONVERSATION"}<ArrowRight size={15} />
-            </button>
-          </div>
-        </section>
-
-        <ConnectedWorlds accounts={hero.connectedSocialAccounts ?? []} onDisconnect={disconnectSocialAccount} />
-        <XMatchArena heroName={hero.name} challenges={hero.xMatchChallenges ?? []} onCreate={createXMatch} onTurn={recordXMatchTurn} />
-        <HowItWorks />
-        <HeroCodex xp={hero.xp} level={level} rank={rank.name} open={codexOpen} onOpenChange={setCodexOpen} />
 
         {selectedQuest && (
           <div className="merit-modal" role="dialog" aria-modal="true" aria-label="AI merit review">
@@ -1752,8 +1494,7 @@ function App() {
                 </div>
               </fieldset>
               <button className="primary-command primary-command--submit" type="submit">SUBMIT FOR REVIEW <ArrowRight size={17} /></button>
-              <label className="quest-attestation"><input type="checkbox" checked={selfAttestCompletion} onChange={(event) => setSelfAttestCompletion(event.target.checked)} /><span>I completed this quest and the attached evidence is mine. Award merit-based XP as a player self-attestation.</span></label>
-              <p className="review-note"><ShieldCheck size={14} /> Self-attested XP is labeled and capped; independent review is not available in this local prototype.</p>
+              <p className="review-note"><ShieldCheck size={14} /> Evidence is recorded as submitted, never auto-verified.</p>
               <p className="form-message" role="status">{questMessage}</p>
             </div>
           </form>
@@ -1767,7 +1508,7 @@ function App() {
           )}
         </section>
 
-        <section className="diary-section" id="chronicle">
+        <section className="diary-section">
           <div className="achievement-heading">
             <div className="section-title-with-familiar"><FamiliarPortrait familiar={profileFamiliar} stage={familiarStage} mood="listening" scale="section" /><div><span className="screen-kicker">PRIVATE HERO JOURNAL</span><h2>Chronicle</h2></div></div>
             <span className="pending-count">{hero.diary.length} ENTRIES</span>
@@ -1834,38 +1575,23 @@ function App() {
             )) : <p className="quiet-empty">Your Hero card archive will begin once your first meaningful milestone is reached.</p>}
           </div>
         </section>
-
-        <section className="account-data-controls" aria-labelledby="account-data-title">
-          <div><span className="screen-kicker">ACCOUNT & DATA CONTROLS</span><h2 id="account-data-title">Your local Hero record</h2><p>This build has no email, Google, Apple, or server account system. Your Hero data is stored on this device; no remote account can be signed out of or deleted here.</p></div>
-          <button type="button" className="secondary-command" onClick={() => setScreen("intro")}>RETURN TO OPENING</button>
-          {!deleteAccountOpen ? <button type="button" className="danger-command" onClick={() => setDeleteAccountOpen(true)}>DELETE LOCAL HERO DATA</button> : (
-            <form className="delete-local-form" onSubmit={deleteLocalHeroData}>
-              <label className="form-field"><span>WHY ARE YOU DELETING THIS HERO? <b>*</b></span><select value={deletionReason} onChange={(event) => setDeletionReason(event.target.value)} required><option value="">Choose a reason</option><option>Taking a break</option><option>Privacy concerns</option><option>Starting over</option><option>Not what I expected</option><option>Other</option></select></label>
-              {deletionReason === "Other" && <label className="form-field"><span>PLEASE TELL US WHY <b>*</b></span><textarea value={deletionDetails} onChange={(event) => setDeletionDetails(event.target.value)} rows={2} maxLength={240} required /></label>}
-              <label className="quest-attestation"><input type="checkbox" required /><span>I understand this permanently clears this device’s Hero profile, quests, journal, cards, and local challenge records.</span></label>
-              <button type="submit" className="danger-command">DELETE LOCAL DATA</button>
-              <button type="button" className="secondary-command" onClick={() => { setDeleteAccountOpen(false); setDeletionReason(""); setDeletionDetails(""); }}>CANCEL</button>
-            </form>
-          )}
-        </section>
       </div>
     </main>
   );
 }
 
 function AchievementRecord({ quest, onReview }: { quest: QuestLog; onReview: (id: string) => void }) {
-  const playerAttested = quest.verificationSource === "player_attestation";
-  const status = playerAttested ? "SELF-ATTESTED · NOT INDEPENDENTLY REVIEWED" : quest.verification.replaceAll("_", " ").toUpperCase();
+  const status = quest.verification.replaceAll("_", " ").toUpperCase();
   const verified = quest.verification === "verified" || quest.verification === "strongly_verified";
   const evidenceLabels = ["CLAIM ONLY", "SELF-REPORTED", "SUPPORTING MATERIAL", "VERIFIED", "STRONGLY VERIFIED"];
   return (
     <article className="achievement-record">
       {quest.proof.kind === "photo" && <img className="achievement-record__proof" src={quest.proof.src} alt="Submitted evidence" />}
       <div className="achievement-record__body">
-        <div className="record-status"><span><ShieldCheck size={14} /> {status}{verified || playerAttested ? "" : " · NOT VERIFIED"}</span><span>{quest.visibility === "sealed" ? <><LockKeyhole size={13} /> SEALED</> : <><Eye size={13} /> PUBLIC</>}</span></div>
+        <div className="record-status"><span><ShieldCheck size={14} /> {status}{verified ? "" : " · NOT VERIFIED"}</span><span>{quest.visibility === "sealed" ? <><LockKeyhole size={13} /> SEALED</> : <><Eye size={13} /> PUBLIC</>}</span></div>
         <h3>{quest.title}</h3>
         <p>{quest.description}</p>
-        <div className="record-details"><span>{ATTRS.find((attribute) => attribute.key === quest.attr)?.label}</span><span>{quest.category}</span><span>LEVEL {quest.evidenceLevel} · {evidenceLabels[quest.evidenceLevel]}</span><span>{quest.xp ? `${quest.xp} ${playerAttested ? "ATTESTED" : "VERIFIED"} XP` : "XP PENDING REVIEW"}</span></div>
+        <div className="record-details"><span>{ATTRS.find((attribute) => attribute.key === quest.attr)?.label}</span><span>{quest.category}</span><span>LEVEL {quest.evidenceLevel} · {evidenceLabels[quest.evidenceLevel]}</span><span>{quest.xp ? `${quest.xp} VERIFIED XP` : "XP PENDING REVIEW"}</span></div>
         <div className="merit-breakdown">
           <strong>{ATTRS.find((attribute) => attribute.key === quest.attr)?.label} +{quest.merit.attributes[quest.attr] ?? 0}</strong>
           <button type="button" className="merit-inspect" onClick={() => onReview(quest.id)}>AI MERIT REVIEW</button>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import type { ConnectedSocialAccount, SocialActivityEvent } from "./social-integrations";
 
 export type AttrKey = "mind" | "adapt" | "heart" | "vision" | "legacy";
 export type MeritCategoryKey = "humanity" | "kindness" | "artistry" | "innovation" | "wisdom";
@@ -14,6 +15,27 @@ export type HeroFamiliar = {
     accentColor: string;
     marking: string;
   };
+};
+
+export type HeroIdentityNotes = {
+  creations: string;
+  interests: string;
+  accomplishments: string;
+  goals: string;
+  distinction: string;
+};
+
+export type GeneratedArtworkKind = "hero-awakening" | "hero-card" | "familiar-portrait" | "rank-evolution";
+
+export type GeneratedArtwork = {
+  id: string;
+  kind: GeneratedArtworkKind;
+  src: string;
+  promptVersion: string;
+  at: number;
+  rank: string;
+  level: number;
+  evolutionStage: number;
 };
 
 export type FamiliarMemory = {
@@ -60,6 +82,7 @@ export function rankFor(level: number): Rank {
 }
 
 export const XP_PER_LEVEL = 120;
+export const SELF_ATTESTED_XP_DAILY_CAP = 60;
 export const MILESTONE_THRESHOLDS = [1000, 5000, 10000] as const;
 
 export function levelFromXp(xp: number) {
@@ -75,8 +98,23 @@ export function familiarEvolutionStage(hero: Pick<Hero, "xp" | "quests">): numbe
 
 export type ProofKind = "photo" | "video" | "link";
 
-export type VerificationStatus = "claimed" | "submitted" | "under_review" | "verified" | "strongly_verified";
+export type VerificationStatus = "claimed" | "submitted" | "under_review" | "self_attested" | "verified" | "strongly_verified";
 export type EvidenceLevel = 0 | 1 | 2 | 3 | 4;
+export type XMatchChallenge = {
+  id: string;
+  opponentName: string;
+  challengeType: string;
+  objective: string;
+  rules: string;
+  createdAt: number;
+  endsAt: number;
+  pointsToWin: number;
+  challengerScore: number;
+  opponentScore: number;
+  turns: { player: "challenger" | "opponent"; proof: string; at: number }[];
+  status: "active" | "complete";
+  winner?: "challenger" | "opponent";
+};
 
 /** XP is never free — every quest must carry proof. */
 export type Proof = {
@@ -107,6 +145,7 @@ export type QuestLog = {
   at: number;
   proof: Proof;
   verification: VerificationStatus;
+  verificationSource?: "player_attestation" | "independent_review";
   evidenceLevel: EvidenceLevel;
   /** sealed = locked in the hidden chest, still counts; public = shown in the feed */
   visibility: "sealed" | "public";
@@ -138,6 +177,7 @@ export type HeroCardSnapshot = {
   familiar: HeroFamiliar;
   familiarStage: number;
   familiarTheme: MeritCategoryKey | "none";
+  artwork?: GeneratedArtwork;
   /** deeds & creations added since the previous card */
   highlights: string[];
 };
@@ -171,6 +211,12 @@ export type Hero = {
   name: string;
   title: string;
   avatar: string;
+  visualPreferences?: string;
+  identityNotes?: HeroIdentityNotes;
+  artworks?: GeneratedArtwork[];
+  connectedSocialAccounts?: ConnectedSocialAccount[];
+  socialActivityEvents?: SocialActivityEvent[];
+  xMatchChallenges?: XMatchChallenge[];
   weapon: string;
   bio: string;
   ghost: boolean;
@@ -202,6 +248,7 @@ export const DEFAULT_HERO: Hero = {
   xp: 0,
   attrs: { mind: 1, adapt: 1, heart: 1, vision: 1, legacy: 1 },
   quests: [],
+  xMatchChallenges: [],
   diary: [],
   vault: [],
   coins: 0,
@@ -219,6 +266,7 @@ export const DEFAULT_HERO: Hero = {
 /** Builds the card minted at a rank-up moment. */
 export function mintCard(hero: Hero, level: number, highlights: string[]): HeroCardSnapshot {
   const rank = rankFor(level);
+  const artwork = [...(hero.artworks ?? [])].reverse().find((item) => item.kind === "hero-card" || item.kind === "rank-evolution");
   const familiarTheme = MERIT_CATEGORIES.reduce((best, category) => {
     const score = hero.quests
       .filter((quest) => quest.verification === "verified" || quest.verification === "strongly_verified")
@@ -240,6 +288,7 @@ export function mintCard(hero: Hero, level: number, highlights: string[]): HeroC
     familiar: { ...hero.familiar, appearance: hero.familiar.appearance ? { ...hero.familiar.appearance } : undefined },
     familiarStage: familiarEvolutionStage(hero),
     familiarTheme: familiarTheme.score > 0 ? familiarTheme.key : "none",
+    artwork: artwork ? { ...artwork } : undefined,
     highlights,
   };
 }
@@ -326,6 +375,10 @@ export function evaluateQuestMerit(
   };
 }
 
+export function questXpForMerit(merit: MeritBreakdown): number {
+  return Math.min(40, Math.max(10, Math.round((merit.difficulty + merit.originality + merit.impact + merit.completion) / 2)));
+}
+
 export function getMilestoneCards(hero: Hero): HeroCardSnapshot[] {
   const earned = new Set(hero.cards.map((card) => card.level));
   return MILESTONE_THRESHOLDS.filter((threshold) => hero.xp >= threshold && !earned.has(levelFromXp(threshold))).map((threshold) => {
@@ -398,7 +451,7 @@ export function createAuditTrailEntry(
     id: crypto.randomUUID(),
     title: quest.title,
     status: quest.verification,
-    decision: quest.verification === "verified" || quest.verification === "strongly_verified" ? "QUEST COMPLETE" : "CLAIMED — NOT VERIFIED",
+    decision: quest.verification === "self_attested" ? "PLAYER ATTESTED — NOT INDEPENDENTLY REVIEWED" : quest.verification === "verified" || quest.verification === "strongly_verified" ? "QUEST COMPLETE" : "CLAIMED — NOT VERIFIED",
     evidence,
     criteria,
     points: quest.xp,
@@ -439,7 +492,7 @@ export function useHero() {
             },
             verification,
             evidenceLevel: quest.evidenceLevel ?? (quest.proof?.src ? 2 : 1),
-            xp: verification === "verified" || verification === "strongly_verified" ? quest.xp : 0,
+            xp: verification === "self_attested" || verification === "verified" || verification === "strongly_verified" ? quest.xp : 0,
           };
         });
         const familiar = stored.familiar ?? DEFAULT_HERO.familiar;
@@ -450,6 +503,7 @@ export function useHero() {
           attrs: { ...DEFAULT_HERO.attrs, ...stored.attrs },
           reactions: { ...DEFAULT_HERO.reactions, ...stored.reactions },
           quests,
+          xMatchChallenges: stored.xMatchChallenges ?? [],
           familiar,
           familiarMemory: {
             introduction: stored.familiarMemory?.introduction ?? "",
